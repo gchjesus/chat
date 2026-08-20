@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chat por Salas en Vivo</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 600px; margin: 30px auto; padding: 0 20px; background: #f4f4f9; }
+        .box { background: white; padding: 15px; margin-bottom: 15px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        .hidden { display: none; }
+        #chat-window { height: 250px; border: 1px solid #ccc; overflow-y: scroll; padding: 10px; margin-bottom: 10px; background: #fff; border-radius: 4px; }
+        .message { margin-bottom: 8px; }
+        .message.me { color: #007bff; text-align: right; }
+        .message.peer { color: #28a745; }
+        .message.system { color: #6c757d; font-style: italic; }
+        input, button { padding: 8px; margin-top: 5px; }
+        button { background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; }
+        button:hover { background: #0056b3; }
+    </style>
+</head>
+<body>
+
+    <h2>Chat por Salas en Vivo</h2>
+
+    <!-- Pantalla de Ingreso -->
+    <div id="join-box" class="box">
+        <h3>Escribe el nombre de la sala</h3>
+        <p>Cualquier persona que escriba el mismo nombre se conectará contigo.</p>
+        <input type="text" id="room-input" placeholder="Ej. equipo-abc" style="width: 65%;">
+        <button id="btn-join">Entrar a la Sala</button>
+    </div>
+
+    <!-- Pantalla del Chat -->
+    <div id="chat-box" class="box hidden">
+        <h3>Sala: <span id="room-title" style="color: #007bff;"></span></h3>
+        <div id="chat-window"></div>
+        <input type="text" id="msg-input" placeholder="Escribe un mensaje..." style="width: 75%;">
+        <button id="btn-send">Enviar</button>
+    </div>
+
+    <script>
+        let ws;
+        let roomName = "";
+        const myId = Math.random().toString(36).substring(2, 9);
+
+        const joinBox = document.getElementById('join-box');
+        const chatBox = document.getElementById('chat-box');
+        const roomInput = document.getElementById('room-input');
+        const btnJoin = document.getElementById('btn-join');
+        const roomTitle = document.getElementById('room-title');
+        const chatWindow = document.getElementById('chat-window');
+        const msgInput = document.getElementById('msg-input');
+        const btnSend = document.getElementById('btn-send');
+
+        function appendMessage(text, type = 'peer') {
+            const div = document.createElement('div');
+            div.className = `message ${type}`;
+            div.textContent = text;
+            chatWindow.appendChild(div);
+            chatWindow.scrollTop = chatWindow.scrollHeight;
+        }
+
+        btnJoin.onclick = () => {
+            roomName = roomInput.value.trim().toLowerCase();
+            if (!roomName) return alert("Escribe un nombre de sala válido.");
+
+            roomTitle.textContent = roomName;
+            joinBox.classList.add('hidden');
+            chatBox.classList.remove('hidden');
+
+            appendMessage(`Conectando al servidor...`, "system");
+
+            // Usamos un servicio de WebSocket público de mensajería libre
+            ws = new WebSocket('wss://echo.websocket.events');
+
+            ws.onopen = () => {
+                appendMessage(`¡Conectado a la sala '${roomName}'!`, "system");
+                // Nos identificamos en la sala
+                ws.send(JSON.stringify({ action: 'join', room: roomName, sender: myId }));
+            };
+
+            ws.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    // Si el mensaje viene de otra pestaña en la misma sala
+                    if (data.room === roomName && data.sender !== myId && data.text) {
+                        appendMessage(`Otro: ${data.text}`, "peer");
+                    }
+                } catch (e) {
+                    // Ignorar respuestas que no sean JSON válido del eco
+                }
+            };
+
+            ws.onerror = () => {
+                appendMessage("Error en la conexión WebSocket.", "system");
+            };
+
+            ws.onclose = () => {
+                appendMessage("Desconectado del servidor.", "system");
+            };
+        };
+
+        btnSend.onclick = () => {
+            const msg = msgInput.value.trim();
+            if (msg && ws && ws.readyState === WebSocket.OPEN) {
+                const payload = JSON.stringify({
+                    room: roomName,
+                    sender: myId,
+                    text: msg
+                });
+                ws.send(payload);
+                appendMessage(`Tú: ${msg}`, "me");
+                msgInput.value = '';
+            }
+        };
+
+        msgInput.onkeypress = (e) => {
+            if (e.key === 'Enter') btnSend.click();
+        };
+    </script>
+</body>
+</html>
